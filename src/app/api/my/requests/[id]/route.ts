@@ -4,6 +4,41 @@ import { auth } from "@/lib/auth";
 import { apiHandler } from "@/lib/api-handler";
 import "@/lib/auth-types";
 
+// GET /api/my/requests/:id — customer's own request detail (read-only)
+export const GET = apiHandler(async (_request, { params }) => {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const customerId = session.user.customerId;
+  if (!customerId) return NextResponse.json({ error: "No customer account" }, { status: 403 });
+
+  const { id } = await params;
+
+  const sr = await prisma.serviceRequest.findUnique({
+    where: { id },
+    include: {
+      account: {
+        select: {
+          id: true, name: true, addressLine1: true, city: true, state: true, zip: true,
+          membership: { select: { tier: true, status: true } },
+        },
+      },
+      job: { select: { scheduledDate: true, scheduledWindow: true } },
+    },
+  });
+
+  if (!sr) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (sr.account) {
+    // Verify ownership
+    const account = await prisma.account.findUnique({ where: { id: sr.account.id }, select: { customerId: true } });
+    if (account?.customerId !== customerId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
+  return NextResponse.json(sr);
+});
+
 // PATCH /api/my/requests/:id — customer self-cancel (SUBMITTED or UNDER_REVIEW only)
 export const PATCH = apiHandler(async (request, { params }) => {
   const session = await auth();

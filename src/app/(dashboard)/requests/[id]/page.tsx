@@ -54,7 +54,7 @@ interface ServiceRequest {
   attachments: { id: string; fileName: string }[];
 }
 
-interface Technician { id: string; email: string; }
+interface Technician { id: string; email: string; name: string; }
 
 const STATUS_FLOW = ["SUBMITTED", "UNDER_REVIEW", "SCHEDULED", "IN_PROGRESS", "COMPLETE", "CLOSED", "RESCHEDULE_REQUESTED", "CANCEL_REQUESTED", "CANCELED"];
 
@@ -88,6 +88,8 @@ export default function RequestDetailPage() {
   // Link unlinked request
   const [showLink, setShowLink] = useState(false);
   const [linkAccountId, setLinkAccountId] = useState("");
+  const [linkSearch, setLinkSearch] = useState("");
+  const [linkResults, setLinkResults] = useState<{ id: string; name: string | null; addressLine1: string; city: string; customer: { firstName: string; lastName: string } }[]>([]);
 
   useEffect(() => {
     loadRequest();
@@ -282,13 +284,33 @@ export default function RequestDetailPage() {
       {showLink && (
         <div className="rounded border border-orange-200 bg-orange-50 p-4 mb-4">
           <h3 className="font-medium text-orange-800 mb-2">Link to Account</h3>
-          <p className="text-sm text-orange-700 mb-3">Enter the account ID to link this request. Create the customer/account first if needed.</p>
+          <p className="text-sm text-orange-700 mb-3">Search for a customer or address to link this request.</p>
+          <input value={linkSearch}
+            onChange={async (e) => {
+              setLinkSearch(e.target.value);
+              if (e.target.value.length >= 2) {
+                const { data } = await fetchApi<typeof linkResults>(`/api/accounts?search=${encodeURIComponent(e.target.value)}`);
+                if (data) setLinkResults(data);
+              } else { setLinkResults([]); }
+            }}
+            placeholder="Search by name, address, or city..."
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm mb-2" />
+          {linkResults.length > 0 && (
+            <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
+              {linkResults.map((acct) => (
+                <button key={acct.id}
+                  onClick={() => { setLinkAccountId(acct.id); setLinkSearch(`${acct.customer.lastName}, ${acct.customer.firstName} — ${acct.name || acct.addressLine1}, ${acct.city}`); setLinkResults([]); }}
+                  className={`w-full text-left rounded p-2 text-sm hover:bg-orange-100 ${linkAccountId === acct.id ? "bg-orange-100 border border-orange-300" : ""}`}>
+                  <span className="font-medium">{acct.customer.lastName}, {acct.customer.firstName}</span>
+                  <span className="text-gray-500"> — {acct.name || acct.addressLine1}, {acct.city}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex gap-2">
-            <input value={linkAccountId} onChange={(e) => setLinkAccountId(e.target.value)}
-              placeholder="Account ID" className="flex-1 rounded border border-gray-300 px-3 py-2 text-sm" />
             <button onClick={handleLinkAccount} disabled={updating || !linkAccountId}
               className="rounded bg-orange-600 px-3 py-1.5 text-sm text-white font-medium hover:bg-orange-700 disabled:opacity-50">Link</button>
-            <button onClick={() => setShowLink(false)}
+            <button onClick={() => { setShowLink(false); setLinkSearch(""); setLinkResults([]); setLinkAccountId(""); }}
               className="rounded border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50">Cancel</button>
           </div>
         </div>
@@ -367,7 +389,7 @@ export default function RequestDetailPage() {
                   onChange={(e) => setScheduleForm({ ...scheduleForm, assignedTechnicianId: e.target.value })}
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm">
                   <option value="">Unassigned</option>
-                  {technicians.map((t) => <option key={t.id} value={t.id}>{t.email}</option>)}
+                  {technicians.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
               <div>

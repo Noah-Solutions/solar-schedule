@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type Tab = "plans" | "coverage" | "catalog" | "templates" | "users";
+type Tab = "plans" | "coverage" | "catalog" | "templates" | "users" | "schedules";
 
 interface InternalUser {
   id: string;
@@ -56,7 +56,7 @@ export default function AdminPage() {
       <h1 className="text-2xl font-bold mb-6">Admin</h1>
 
       <div className="flex gap-1 border-b border-gray-200 mb-6">
-        {(["plans", "coverage", "catalog", "templates", "users"] as Tab[]).map((t) => (
+        {(["plans", "coverage", "catalog", "templates", "users", "schedules"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -74,7 +74,9 @@ export default function AdminPage() {
                   ? "Service Catalog"
                   : t === "templates"
                     ? "Templates"
-                    : "Users"}
+                    : t === "users"
+                      ? "Users"
+                      : "Tech Schedules"}
           </button>
         ))}
       </div>
@@ -84,6 +86,7 @@ export default function AdminPage() {
       {tab === "catalog" && <CatalogTab />}
       {tab === "templates" && <TemplatesTab />}
       {tab === "users" && <UsersTab />}
+      {tab === "schedules" && <SchedulesTab />}
     </div>
   );
 }
@@ -1018,6 +1021,145 @@ function UsersTab() {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ─── Tech Schedules Tab ─────────────────────────────────────
+
+const DAY_NAMES_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+interface TechWithSchedule {
+  id: string;
+  email: string;
+}
+
+interface ScheduleDay {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  isAvailable: boolean;
+}
+
+function SchedulesTab() {
+  const [techs, setTechs] = useState<TechWithSchedule[]>([]);
+  const [schedules, setSchedules] = useState<(ScheduleDay & { userId: string })[]>([]);
+  const [selectedTech, setSelectedTech] = useState<string | null>(null);
+  const [editDays, setEditDays] = useState<ScheduleDay[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    // Load technicians
+    fetch("/api/technicians").then((r) => r.json()).then(setTechs);
+    // Load all schedules
+    fetch("/api/admin/tech-schedules").then((r) => r.json()).then((data: (ScheduleDay & { userId: string })[]) => {
+      setSchedules(data);
+    });
+  }, []);
+
+  function selectTech(techId: string) {
+    setSelectedTech(techId);
+    setError("");
+    const existing = schedules.filter((s) => s.userId === techId);
+    // Build 7-day array
+    const days: ScheduleDay[] = Array.from({ length: 7 }, (_, i) => {
+      const found = existing.find((s) => s.dayOfWeek === i);
+      return found
+        ? { dayOfWeek: i, startTime: found.startTime, endTime: found.endTime, isAvailable: found.isAvailable }
+        : { dayOfWeek: i, startTime: "07:00", endTime: "17:00", isAvailable: i < 5 }; // Default Mon-Fri
+    });
+    setEditDays(days);
+  }
+
+  async function handleSave() {
+    if (!selectedTech) return;
+    setSaving(true);
+    setError("");
+    const res = await fetch(`/api/admin/tech-schedules/${selectedTech}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days: editDays }),
+    });
+    if (res.ok) {
+      // Reload schedules
+      const all = await fetch("/api/admin/tech-schedules").then((r) => r.json());
+      setSchedules(all);
+      setError("");
+    } else {
+      const d = await res.json();
+      setError(d.error || "Failed to save");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div>
+      {error && <p className="text-sm text-red-600 bg-red-50 p-3 rounded mb-4">{error}</p>}
+
+      <div className="flex gap-2 mb-4">
+        {techs.map((t) => (
+          <button key={t.id} onClick={() => selectTech(t.id)}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium border ${
+              selectedTech === t.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}>
+            {t.email.split("@")[0]}
+          </button>
+        ))}
+      </div>
+
+      {selectedTech && (
+        <div className="space-y-2">
+          {editDays.map((day, i) => (
+            <div key={i} className="flex items-center gap-3 rounded border border-gray-100 p-3">
+              <div className="w-24 font-medium text-sm">{DAY_NAMES_FULL[i]}</div>
+              <label className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={day.isAvailable}
+                  onChange={(e) => {
+                    const updated = [...editDays];
+                    updated[i] = { ...day, isAvailable: e.target.checked };
+                    setEditDays(updated);
+                  }}
+                  className="rounded"
+                />
+                Available
+              </label>
+              {day.isAvailable && (
+                <>
+                  <input type="time" value={day.startTime}
+                    onChange={(e) => {
+                      const updated = [...editDays];
+                      updated[i] = { ...day, startTime: e.target.value };
+                      setEditDays(updated);
+                    }}
+                    className="rounded border border-gray-300 px-2 py-1 text-sm" />
+                  <span className="text-gray-400">to</span>
+                  <input type="time" value={day.endTime}
+                    onChange={(e) => {
+                      const updated = [...editDays];
+                      updated[i] = { ...day, endTime: e.target.value };
+                      setEditDays(updated);
+                    }}
+                    className="rounded border border-gray-300 px-2 py-1 text-sm" />
+                </>
+              )}
+            </div>
+          ))}
+          <button onClick={handleSave} disabled={saving}
+            className="rounded bg-blue-600 px-4 py-2 text-sm text-white font-medium hover:bg-blue-700 disabled:opacity-50">
+            {saving ? "Saving..." : "Save Schedule"}
+          </button>
+        </div>
+      )}
+
+      {!selectedTech && techs.length > 0 && (
+        <p className="text-sm text-gray-400">Select a technician to manage their schedule.</p>
+      )}
+      {techs.length === 0 && (
+        <p className="text-sm text-gray-400">No technicians found. Create one in the Users tab first.</p>
+      )}
     </div>
   );
 }

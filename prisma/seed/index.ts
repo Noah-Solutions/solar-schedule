@@ -78,6 +78,7 @@ async function main() {
     create: {
       email: "gm@egt.com",
       passwordHash: gmPasswordHash,
+      name: "Bryan (GM)",
       roles: { create: [{ role: "GM" }, { role: "ADMIN" }] },
     },
   });
@@ -89,6 +90,7 @@ async function main() {
     create: {
       email: "tech@egt.com",
       passwordHash: techPasswordHash,
+      name: "Mike (Tech)",
       roles: { create: [{ role: "TECHNICIAN" }] },
     },
   });
@@ -100,6 +102,7 @@ async function main() {
     create: {
       email: "bookkeeper@egt.com",
       passwordHash: bookPasswordHash,
+      name: "Sarah (Books)",
       roles: { create: [{ role: "BOOKKEEPER" }] },
     },
   });
@@ -120,6 +123,7 @@ async function main() {
         create: {
           email: "jane@example.com",
           passwordHash: custPassword,
+          name: "Jane Smith",
           roles: { create: [{ role: "CUSTOMER" }] },
         },
       },
@@ -158,6 +162,7 @@ async function main() {
         create: {
           email: "marcus.rivera@example.com",
           passwordHash: custPassword,
+          name: "Marcus Rivera",
           roles: { create: [{ role: "CUSTOMER" }] },
         },
       },
@@ -220,6 +225,7 @@ async function main() {
         create: {
           email: "linda.chen@example.com",
           passwordHash: custPassword,
+          name: "Linda Chen",
           roles: { create: [{ role: "CUSTOMER" }] },
         },
       },
@@ -487,6 +493,22 @@ async function main() {
         value: rule.value,
         fallbackRuleType: rule.fallbackRuleType || null,
         fallbackValue: rule.fallbackValue ?? null,
+      },
+    });
+  }
+
+  // ─── Tech Schedules ────────────────────────────────────────
+  // Tech A: Mon-Fri 7am-5pm
+  for (let day = 0; day < 7; day++) {
+    await prisma.techSchedule.upsert({
+      where: { userId_dayOfWeek: { userId: techUser.id, dayOfWeek: day } },
+      update: {},
+      create: {
+        userId: techUser.id,
+        dayOfWeek: day,
+        startTime: "07:00",
+        endTime: "17:00",
+        isAvailable: day < 5, // Mon-Fri
       },
     });
   }

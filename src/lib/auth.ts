@@ -32,6 +32,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return {
           id: user.id,
           email: user.email,
+          name: user.name || user.email.split("@")[0],
           roles: user.roles.map((r) => r.role),
           customerId: user.customerId,
         };
@@ -43,12 +44,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user) {
         token.roles = user.roles as Role[];
         token.customerId = user.customerId as string | null;
+        token.name = (user.name as string) || user.email!.split("@")[0];
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.sub!;
+        session.user.name = token.name;
         session.user.roles = token.roles;
         session.user.customerId = token.customerId;
       }

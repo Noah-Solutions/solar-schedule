@@ -19,6 +19,7 @@ export default async function DashboardLayout({
   const canSeeBilling = roles.some((r) =>
     ["GM", "ADMIN", "BOOKKEEPER"].includes(r)
   );
+  const isCustomer = roles.includes("CUSTOMER");
 
   return (
     <div className="flex min-h-full">
@@ -28,7 +29,9 @@ export default async function DashboardLayout({
             Service
           </p>
           <NavLink href="/requests">Requests</NavLink>
-          <NavLink href="/jobs">Jobs</NavLink>
+          {isInternal && <NavLink href="/jobs">Jobs</NavLink>}
+          {isInternal && <NavLink href="/schedule">Schedule</NavLink>}
+          {isCustomer && !isInternal && <NavLink href="/my/account">My Account</NavLink>}
 
           {isInternal && (
             <>
@@ -45,10 +48,18 @@ export default async function DashboardLayout({
         <NavUser />
       </nav>
 
+      {/* Mobile header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-10 bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+        <span className="font-bold text-sm">EGT Service</span>
+        <NavUser />
+      </div>
+
       {/* Mobile nav */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-10 bg-white border-t border-gray-200 px-2 py-1 flex justify-around">
         <MobileLink href="/requests" label="Requests" />
-        <MobileLink href="/jobs" label="Jobs" />
+        {isInternal && <MobileLink href="/jobs" label="Jobs" />}
+        {isInternal && <MobileLink href="/schedule" label="Schedule" />}
+        {isCustomer && !isInternal && <MobileLink href="/my/account" label="Account" />}
         {isInternal && (
           <>
             <MobileLink href="/customers" label="Customers" />
@@ -58,7 +69,7 @@ export default async function DashboardLayout({
         )}
       </div>
 
-      <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6">{children}</main>
+      <main className="flex-1 p-4 md:p-6 pt-14 md:pt-6 pb-20 md:pb-6">{children}</main>
     </div>
   );
 }

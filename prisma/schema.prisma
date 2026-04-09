@@ -13,14 +13,17 @@ model User {
   id           String     @id @default(uuid()) @db.Uuid
   email        String     @unique
   passwordHash String
+  name         String?
   customerId   String?    @unique @db.Uuid
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  customer     Customer?  @relation(fields: [customerId], references: [id])
-  roles        UserRole[]
-  comments     Comment[]
-  attachments  Attachment[]
+  customer      Customer?      @relation(fields: [customerId], references: [id])
+  roles         UserRole[]
+  comments      Comment[]
+  attachments   Attachment[]
+  techSchedules TechSchedule[] @relation("TechSchedules")
+  timeOffs      TimeOff[]      @relation("TimeOffs")
 }
 
 enum Role {
@@ -279,4 +282,31 @@ model CoverageRule {
   updatedAt        DateTime          @updatedAt
 
   @@unique([tier, category])
+}
+
+// ─── Scheduling ─────────────────────────────────────────────
+
+model TechSchedule {
+  id          String  @id @default(uuid()) @db.Uuid
+  userId      String  @db.Uuid
+  dayOfWeek   Int     // 0=Monday, 1=Tuesday, ..., 6=Sunday
+  startTime   String  // "07:00"
+  endTime     String  // "17:00"
+  isAvailable Boolean @default(true)
+
+  user User @relation("TechSchedules", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayOfWeek])
+}
+
+model TimeOff {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  date      DateTime @db.Date
+  startTime String?  // null = all day
+  endTime   String?
+  reason    String?
+  createdAt DateTime @default(now())
+
+  user User @relation("TimeOffs", fields: [userId], references: [id], onDelete: Cascade)
 }

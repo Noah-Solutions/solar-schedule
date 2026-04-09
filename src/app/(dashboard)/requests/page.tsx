@@ -269,7 +269,7 @@ function CustomerRequests() {
       ) : (
         <div className="space-y-3">
           {requests.map((sr) => (
-            <div key={sr.id} className="rounded border border-gray-200 p-4">
+            <Link key={sr.id} href={`/my/requests/${sr.id}`} className="block rounded border border-gray-200 p-4 hover:bg-gray-50 transition-colors">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
@@ -305,7 +305,7 @@ function CustomerRequests() {
                   </span>
                   {canCancel(sr.status) && (
                     <button
-                      onClick={() => handleCancel(sr.id)}
+                      onClick={(e) => { e.preventDefault(); handleCancel(sr.id); }}
                       disabled={canceling === sr.id}
                       className="text-xs text-red-500 hover:underline disabled:opacity-50"
                     >
@@ -314,7 +314,7 @@ function CustomerRequests() {
                   )}
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}

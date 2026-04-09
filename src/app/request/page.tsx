@@ -63,7 +63,14 @@ export default function ServiceRequestPage() {
     if (isLoggedIn && hasCustomerId) {
       loadAccounts();
     }
-  }, [isLoggedIn, hasCustomerId]);
+    // Pre-fill contact info from session if logged in
+    if (isLoggedIn && session?.user) {
+      const name = (session.user as Record<string, unknown>).name as string | undefined;
+      const email = session.user.email;
+      if (name && !contactName) setContactName(name);
+      if (email && !contactEmail) setContactEmail(email);
+    }
+  }, [isLoggedIn, hasCustomerId, session]);
 
   async function loadAccounts() {
     setLoadingAccounts(true);
