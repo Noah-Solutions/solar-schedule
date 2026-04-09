@@ -8,6 +8,7 @@ import "@/lib/auth-types";
 
 const STATUSES = ["SUBMITTED", "UNDER_REVIEW", "SCHEDULED", "IN_PROGRESS", "COMPLETE", "CLOSED", "RESCHEDULE_REQUESTED", "CANCEL_REQUESTED", "CANCELED"] as const;
 const BILLING_STATUSES = ["PENDING", "BILLED", "NOT_APPLICABLE"] as const;
+const BILLING_CLASSIFICATIONS = ["COVERED", "DISCOUNTED", "BILLABLE"] as const;
 
 export const GET = apiHandler(async (_request, { params }) => {
   const { error } = await requireRoles("GM", "ADMIN", "TECHNICIAN", "BOOKKEEPER");
@@ -66,6 +67,8 @@ export const PATCH = apiHandler(async (request, { params }) => {
     accountId,
     // Billing
     billingStatus,
+    billingClassification,
+    billingNote,
   } = body;
 
   const existing = await prisma.serviceRequest.findUnique({ where: { id } });
@@ -88,6 +91,18 @@ export const PATCH = apiHandler(async (request, { params }) => {
     );
     if (!transition.allowed) {
       return NextResponse.json({ error: transition.reason }, { status: 403 });
+    }
+
+    // Validate tech is assigned when moving to SCHEDULED
+    if (status === "SCHEDULED") {
+      const existingJob = await prisma.job.findUnique({ where: { serviceRequestId: id } });
+      const hasTech = assignedTechnicianId || existingJob?.assignedTechnicianId;
+      if (!hasTech) {
+        return NextResponse.json(
+          { error: "A technician must be assigned before scheduling" },
+          { status: 400 }
+        );
+      }
     }
 
     const updateData: Record<string, unknown> = { status };
@@ -130,7 +145,9 @@ export const PATCH = apiHandler(async (request, { params }) => {
     scheduledWindow !== undefined ||
     rescheduleReason !== undefined ||
     followUpNeeded !== undefined ||
-    billingStatus !== undefined
+    billingStatus !== undefined ||
+    billingClassification !== undefined ||
+    billingNote !== undefined
   ) {
     if (scheduledDate && isNaN(Date.parse(scheduledDate))) {
       return NextResponse.json({ error: "scheduledDate must be a valid date" }, { status: 400 });
@@ -151,6 +168,10 @@ export const PATCH = apiHandler(async (request, { params }) => {
     if (billingStatus !== undefined && isValidEnum(billingStatus, [...BILLING_STATUSES])) {
       jobData.billingStatus = billingStatus;
     }
+    if (billingClassification !== undefined && isValidEnum(billingClassification, [...BILLING_CLASSIFICATIONS])) {
+      jobData.billingClassification = billingClassification;
+    }
+    if (billingNote !== undefined) jobData.billingNote = billingNote;
 
     if (existingJob) {
       await prisma.job.update({

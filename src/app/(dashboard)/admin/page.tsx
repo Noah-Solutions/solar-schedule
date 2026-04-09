@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type Tab = "plans" | "catalog" | "templates" | "users";
+type Tab = "plans" | "coverage" | "catalog" | "templates" | "users";
 
 interface InternalUser {
   id: string;
@@ -56,7 +56,7 @@ export default function AdminPage() {
       <h1 className="text-2xl font-bold mb-6">Admin</h1>
 
       <div className="flex gap-1 border-b border-gray-200 mb-6">
-        {(["plans", "catalog", "templates", "users"] as Tab[]).map((t) => (
+        {(["plans", "coverage", "catalog", "templates", "users"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -68,16 +68,19 @@ export default function AdminPage() {
           >
             {t === "plans"
               ? "Service Plans"
-              : t === "catalog"
-                ? "Service Catalog"
-                : t === "templates"
-                  ? "Templates"
-                  : "Users"}
+              : t === "coverage"
+                ? "Coverage Rules"
+                : t === "catalog"
+                  ? "Service Catalog"
+                  : t === "templates"
+                    ? "Templates"
+                    : "Users"}
           </button>
         ))}
       </div>
 
       {tab === "plans" && <PlansTab />}
+      {tab === "coverage" && <CoverageTab />}
       {tab === "catalog" && <CatalogTab />}
       {tab === "templates" && <TemplatesTab />}
       {tab === "users" && <UsersTab />}
@@ -204,6 +207,234 @@ function PlansTab() {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Coverage Rules Tab (Per-Plan Editor) ───────────────────
+
+interface CoverageRule {
+  id: string;
+  tier: string | null;
+  category: string;
+  ruleType: string;
+  value: number;
+  fallbackRuleType: string | null;
+  fallbackValue: number | null;
+  priority: number;
+  isActive: boolean;
+}
+
+const RULE_TYPES = ["FREE_PER_YEAR", "DISCOUNT_PERCENT", "INCLUDED_HOURS", "FULL_PRICE"];
+const RULE_LABELS: Record<string, string> = {
+  FREE_PER_YEAR: "Free per year",
+  DISCOUNT_PERCENT: "Discount %",
+  INCLUDED_HOURS: "Included hours",
+  FULL_PRICE: "Full price",
+};
+const TIER_LIST = ["BASIC", "ELITE", "PLATINUM"];
+const CATEGORY_LIST = ["SOMETHING_WRONG", "MAINTENANCE", "CLEANING", "INSPECTION", "BATTERY", "WARRANTY", "OTHER"];
+const CATEGORY_LABELS: Record<string, string> = {
+  SOMETHING_WRONG: "Something Wrong", MAINTENANCE: "Maintenance", CLEANING: "Cleaning",
+  INSPECTION: "Inspection", BATTERY: "Battery", WARRANTY: "Warranty", OTHER: "Other",
+};
+
+function CoverageTab() {
+  const [rules, setRules] = useState<CoverageRule[]>([]);
+  const [selectedTier, setSelectedTier] = useState("BASIC");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ ruleType: "", value: 0, fallbackRuleType: "", fallbackValue: 0 });
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState({ category: "SOMETHING_WRONG", ruleType: "FULL_PRICE", value: 0, fallbackRuleType: "", fallbackValue: 0 });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => { loadRules(); }, []);
+
+  async function loadRules() {
+    const res = await fetch("/api/admin/coverage-rules");
+    if (res.ok) setRules(await res.json());
+  }
+
+  const tierRules = rules.filter((r) => r.tier === selectedTier);
+  const nonMemberRules = rules.filter((r) => r.tier === null);
+
+  async function handleSave(id: string) {
+    setSaving(true); setError("");
+    const res = await fetch(`/api/admin/coverage-rules/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ruleType: editForm.ruleType,
+        value: editForm.value,
+        fallbackRuleType: editForm.fallbackRuleType || null,
+        fallbackValue: editForm.fallbackRuleType ? editForm.fallbackValue : null,
+      }),
+    });
+    if (res.ok) { await loadRules(); setEditing(null); }
+    else { const d = await res.json(); setError(d.error || "Failed"); }
+    setSaving(false);
+  }
+
+  async function handleAdd() {
+    setSaving(true); setError("");
+    const res = await fetch("/api/admin/coverage-rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tier: selectedTier,
+        category: addForm.category,
+        ruleType: addForm.ruleType,
+        value: addForm.value,
+        fallbackRuleType: addForm.fallbackRuleType || null,
+        fallbackValue: addForm.fallbackRuleType ? addForm.fallbackValue : null,
+      }),
+    });
+    if (res.ok) { await loadRules(); setShowAdd(false); setAddForm({ category: "SOMETHING_WRONG", ruleType: "FULL_PRICE", value: 0, fallbackRuleType: "", fallbackValue: 0 }); }
+    else { const d = await res.json(); setError(d.error || "Failed"); }
+    setSaving(false);
+  }
+
+  async function handleDelete(id: string) {
+    const res = await fetch(`/api/admin/coverage-rules/${id}`, { method: "DELETE" });
+    if (res.ok) await loadRules();
+  }
+
+  function RuleEditor({ form, setForm }: { form: typeof editForm; setForm: (f: typeof editForm) => void }) {
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600">Rule type</label>
+          <select value={form.ruleType} onChange={(e) => setForm({ ...form, ruleType: e.target.value })}
+            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm">
+            {RULE_TYPES.map((rt) => <option key={rt} value={rt}>{RULE_LABELS[rt]}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600">Value</label>
+          <input type="number" value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })}
+            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm" />
+        </div>
+        {form.ruleType === "FREE_PER_YEAR" && (
+          <>
+            <div>
+              <label className="block text-xs font-medium text-gray-600">After free used</label>
+              <select value={form.fallbackRuleType} onChange={(e) => setForm({ ...form, fallbackRuleType: e.target.value })}
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm">
+                <option value="">Full price</option>
+                <option value="DISCOUNT_PERCENT">Discount %</option>
+              </select>
+            </div>
+            {form.fallbackRuleType === "DISCOUNT_PERCENT" && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600">Fallback %</label>
+                <input type="number" value={form.fallbackValue} onChange={(e) => setForm({ ...form, fallbackValue: Number(e.target.value) })}
+                  className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm" />
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  function RuleRow({ rule }: { rule: CoverageRule }) {
+    const isEditing = editing === rule.id;
+    return (
+      <div className="flex items-center justify-between rounded border border-gray-100 p-3">
+        <div className="flex-1">
+          <span className="font-medium text-sm">{CATEGORY_LABELS[rule.category] || rule.category}</span>
+          {isEditing ? (
+            <div className="mt-2">
+              <RuleEditor form={editForm} setForm={setEditForm} />
+              <div className="flex gap-2 mt-2">
+                <button onClick={() => handleSave(rule.id)} disabled={saving}
+                  className="rounded bg-blue-600 px-3 py-1 text-xs text-white font-medium hover:bg-blue-700 disabled:opacity-50">Save</button>
+                <button onClick={() => setEditing(null)}
+                  className="rounded border border-gray-300 px-3 py-1 text-xs font-medium hover:bg-gray-50">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600 mt-0.5">
+              {RULE_LABELS[rule.ruleType]}: {rule.value}
+              {rule.ruleType === "DISCOUNT_PERCENT" && "%"}
+              {rule.ruleType === "FREE_PER_YEAR" && "/year"}
+              {rule.ruleType === "INCLUDED_HOURS" && " hr(s)"}
+              {rule.fallbackRuleType && (
+                <span className="text-gray-400"> → then {RULE_LABELS[rule.fallbackRuleType]}{rule.fallbackRuleType === "DISCOUNT_PERCENT" ? `: ${rule.fallbackValue}%` : ""}</span>
+              )}
+            </p>
+          )}
+        </div>
+        {!isEditing && (
+          <div className="flex gap-1 ml-2">
+            <button onClick={() => { setEditing(rule.id); setEditForm({ ruleType: rule.ruleType, value: rule.value, fallbackRuleType: rule.fallbackRuleType || "", fallbackValue: rule.fallbackValue || 0 }); }}
+              className="text-xs text-blue-600 hover:underline">Edit</button>
+            <button onClick={() => handleDelete(rule.id)}
+              className="text-xs text-red-500 hover:underline">Delete</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {error && <p className="text-sm text-red-600 bg-red-50 p-3 rounded mb-4">{error}</p>}
+
+      {/* Tier selector */}
+      <div className="flex gap-2 mb-4">
+        {TIER_LIST.map((t) => (
+          <button key={t} onClick={() => { setSelectedTier(t); setEditing(null); setShowAdd(false); }}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium border ${
+              selectedTier === t ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}>
+            {t.charAt(0) + t.slice(1).toLowerCase()}
+          </button>
+        ))}
+        <button onClick={() => { setSelectedTier("__none__"); setEditing(null); setShowAdd(false); }}
+          className={`rounded-full px-4 py-1.5 text-sm font-medium border ${
+            selectedTier === "__none__" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+          }`}>
+          Non-member
+        </button>
+      </div>
+
+      {/* Rules for selected tier */}
+      <div className="space-y-2 mb-4">
+        {(selectedTier === "__none__" ? nonMemberRules : tierRules).length === 0 ? (
+          <p className="text-sm text-gray-400">No coverage rules defined for this tier.</p>
+        ) : (
+          (selectedTier === "__none__" ? nonMemberRules : tierRules).map((rule) => (
+            <RuleRow key={rule.id} rule={rule} />
+          ))
+        )}
+      </div>
+
+      {/* Add rule */}
+      {selectedTier !== "__none__" && (
+        showAdd ? (
+          <div className="rounded border border-blue-200 bg-blue-50 p-4 space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600">Service category</label>
+              <select value={addForm.category} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm">
+                {CATEGORY_LIST.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+              </select>
+            </div>
+            <RuleEditor form={addForm} setForm={(f) => setAddForm({ ...addForm, ...f })} />
+            <div className="flex gap-2">
+              <button onClick={handleAdd} disabled={saving}
+                className="rounded bg-blue-600 px-3 py-1.5 text-xs text-white font-medium hover:bg-blue-700 disabled:opacity-50">Add Rule</button>
+              <button onClick={() => setShowAdd(false)}
+                className="rounded border border-gray-300 px-3 py-1.5 text-xs font-medium hover:bg-gray-50">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setShowAdd(true)}
+            className="text-sm text-blue-600 hover:underline">+ Add coverage rule</button>
+        )
+      )}
     </div>
   );
 }

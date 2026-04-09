@@ -149,6 +149,19 @@ enum BillingStatus {
   NOT_APPLICABLE
 }
 
+enum BillingClassification {
+  COVERED
+  DISCOUNTED
+  BILLABLE
+}
+
+enum CoverageRuleType {
+  FREE_PER_YEAR
+  DISCOUNT_PERCENT
+  INCLUDED_HOURS
+  FULL_PRICE
+}
+
 model ServiceRequest {
   id               String                @id @default(uuid()) @db.Uuid
   accountId        String?               @db.Uuid
@@ -182,8 +195,10 @@ model Job {
   followUpNote             String?
   rescheduleReason         String?
   rescheduleSuggestedTimes Json?
-  billingStatus            BillingStatus  @default(PENDING)
-  createdAt                DateTime       @default(now())
+  billingStatus            BillingStatus           @default(PENDING)
+  billingClassification    BillingClassification?
+  billingNote              String?
+  createdAt                DateTime                @default(now())
   updatedAt                DateTime       @updatedAt
 
   serviceRequest ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
@@ -248,4 +263,20 @@ model CommunicationTemplate {
   body         String
   isActive     Boolean  @default(true)
   updatedAt    DateTime @updatedAt
+}
+
+model CoverageRule {
+  id               String            @id @default(uuid()) @db.Uuid
+  tier             MembershipTier?
+  category         ServiceCategory
+  ruleType         CoverageRuleType
+  value            Float             @default(0)
+  fallbackRuleType CoverageRuleType?
+  fallbackValue    Float?
+  priority         Int               @default(0)
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([tier, category])
 }

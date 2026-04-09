@@ -120,6 +120,9 @@ export default function AccountDetailPage() {
     SCHEDULED: "bg-indigo-100 text-indigo-800",
     IN_PROGRESS: "bg-orange-100 text-orange-800",
     COMPLETE: "bg-green-100 text-green-800",
+    CLOSED: "bg-gray-200 text-gray-800",
+    RESCHEDULE_REQUESTED: "bg-amber-100 text-amber-800",
+    CANCEL_REQUESTED: "bg-red-100 text-red-800",
     CANCELED: "bg-gray-100 text-gray-600",
   };
 

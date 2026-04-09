@@ -76,6 +76,19 @@ const statusColors: Record<string, string> = {
   CANCELED: "bg-gray-100 text-gray-600",
 };
 
+// Customer-friendly labels (internal users see raw status names)
+const customerStatusLabels: Record<string, string> = {
+  SUBMITTED: "Submitted",
+  UNDER_REVIEW: "Under Review",
+  SCHEDULED: "Scheduled",
+  IN_PROGRESS: "In Progress",
+  COMPLETE: "Complete",
+  CLOSED: "Complete",
+  RESCHEDULE_REQUESTED: "Rescheduling",
+  CANCEL_REQUESTED: "Cancellation Pending",
+  CANCELED: "Canceled",
+};
+
 const tierColors: Record<string, string> = {
   BASIC: "bg-gray-100 text-gray-700",
   ELITE: "bg-blue-100 text-blue-700",
@@ -203,13 +216,29 @@ function CustomerRequests() {
   const [requests, setRequests] = useState<MyRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [canceling, setCanceling] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchApi<MyRequest[]>("/api/my/requests").then(({ data, error: err }) => {
-      if (err) { setError(err); } else { setRequests(data!); }
-      setLoading(false);
+  useEffect(() => { loadRequests(); }, []);
+
+  async function loadRequests() {
+    const { data, error: err } = await fetchApi<MyRequest[]>("/api/my/requests");
+    if (err) { setError(err); } else { setRequests(data!); }
+    setLoading(false);
+  }
+
+  async function handleCancel(id: string) {
+    setCanceling(id);
+    setError("");
+    const { error: err } = await fetchApi(`/api/my/requests/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel" }),
     });
-  }, []);
+    if (err) { setError(err); } else { await loadRequests(); }
+    setCanceling(null);
+  }
+
+  const canCancel = (status: string) => ["SUBMITTED", "UNDER_REVIEW"].includes(status);
 
   return (
     <div>
@@ -240,12 +269,9 @@ function CustomerRequests() {
       ) : (
         <div className="space-y-3">
           {requests.map((sr) => (
-            <div
-              key={sr.id}
-              className="rounded border border-gray-200 p-4"
-            >
+            <div key={sr.id} className="rounded border border-gray-200 p-4">
               <div className="flex items-start justify-between">
-                <div>
+                <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">
                       {categoryLabels[sr.category] || sr.category}
@@ -257,9 +283,7 @@ function CustomerRequests() {
                     )}
                   </div>
                   <p className="text-sm text-gray-600 mt-1">
-                    {sr.description.length > 150
-                      ? sr.description.slice(0, 150) + "..."
-                      : sr.description}
+                    {sr.description.length > 150 ? sr.description.slice(0, 150) + "..." : sr.description}
                   </p>
                   <p className="text-xs text-gray-400 mt-2">
                     {sr.account.name || sr.account.addressLine1}, {sr.account.city},{" "}
@@ -273,11 +297,22 @@ function CustomerRequests() {
                     </p>
                   )}
                 </div>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusColors[sr.status] || ""}`}
-                >
-                  {sr.status.replace("_", " ")}
-                </span>
+                <div className="flex flex-col items-end gap-2 ml-3">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${statusColors[sr.status] || ""}`}
+                  >
+                    {customerStatusLabels[sr.status] || sr.status}
+                  </span>
+                  {canCancel(sr.status) && (
+                    <button
+                      onClick={() => handleCancel(sr.id)}
+                      disabled={canceling === sr.id}
+                      className="text-xs text-red-500 hover:underline disabled:opacity-50"
+                    >
+                      {canceling === sr.id ? "Canceling..." : "Cancel Request"}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}

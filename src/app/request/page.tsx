@@ -30,6 +30,7 @@ type Step = "category" | "details" | "schedule" | "review" | "submitted";
 
 export default function ServiceRequestPage() {
   const { data: session, status: sessionStatus } = useSession();
+  const sessionLoading = sessionStatus === "loading";
   const isLoggedIn = sessionStatus === "authenticated";
   const hasCustomerId = !!(session?.user as Record<string, unknown>)?.customerId;
 
@@ -56,7 +57,7 @@ export default function ServiceRequestPage() {
   const [zip, setZip] = useState("");
   const [installedBy, setInstalledBy] = useState("EGT");
 
-  const isUnlinked = !isLoggedIn || !hasCustomerId || accounts.length === 0;
+  const isUnlinked = !sessionLoading && (!isLoggedIn || !hasCustomerId || accounts.length === 0);
 
   useEffect(() => {
     if (isLoggedIn && hasCustomerId) {
@@ -182,8 +183,13 @@ export default function ServiceRequestPage() {
               <button onClick={() => setStep("category")} className="ml-2 text-blue-600 hover:underline">Change</button>
             </p>
 
+            {/* Session still loading */}
+            {(sessionLoading || loadingAccounts) && (
+              <p className="text-gray-500 text-sm">Loading your account info...</p>
+            )}
+
             {/* Linked: account selection */}
-            {isLoggedIn && hasCustomerId && !loadingAccounts && accounts.length > 1 && (
+            {!sessionLoading && isLoggedIn && hasCustomerId && !loadingAccounts && accounts.length > 1 && (
               <div>
                 <label className="block text-sm font-medium mb-1">Which property is this for?</label>
                 <select value={selectedAccountId} onChange={(e) => setSelectedAccountId(e.target.value)}
@@ -197,7 +203,7 @@ export default function ServiceRequestPage() {
             )}
 
             {/* Unlinked: contact info + address */}
-            {isUnlinked && !loadingAccounts && (
+            {isUnlinked && !sessionLoading && !loadingAccounts && (
               <>
                 <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-800">
                   {isLoggedIn

@@ -458,6 +458,39 @@ async function main() {
     },
   });
 
+  // ─── Coverage Rules ────────────────────────────────────────
+  const coverageRules = [
+    // Basic
+    { tier: "BASIC" as const, category: "CLEANING" as const, ruleType: "DISCOUNT_PERCENT" as const, value: 20 },
+    { tier: "BASIC" as const, category: "SOMETHING_WRONG" as const, ruleType: "DISCOUNT_PERCENT" as const, value: 10 },
+    { tier: "BASIC" as const, category: "MAINTENANCE" as const, ruleType: "INCLUDED_HOURS" as const, value: 1 },
+    // Elite
+    { tier: "ELITE" as const, category: "CLEANING" as const, ruleType: "FREE_PER_YEAR" as const, value: 1, fallbackRuleType: "DISCOUNT_PERCENT" as const, fallbackValue: 25 },
+    { tier: "ELITE" as const, category: "INSPECTION" as const, ruleType: "FREE_PER_YEAR" as const, value: 1 },
+    { tier: "ELITE" as const, category: "SOMETHING_WRONG" as const, ruleType: "DISCOUNT_PERCENT" as const, value: 25 },
+    { tier: "ELITE" as const, category: "MAINTENANCE" as const, ruleType: "INCLUDED_HOURS" as const, value: 1 },
+    // Platinum
+    { tier: "PLATINUM" as const, category: "CLEANING" as const, ruleType: "FREE_PER_YEAR" as const, value: 2, fallbackRuleType: "DISCOUNT_PERCENT" as const, fallbackValue: 50 },
+    { tier: "PLATINUM" as const, category: "INSPECTION" as const, ruleType: "FREE_PER_YEAR" as const, value: 1 },
+    { tier: "PLATINUM" as const, category: "SOMETHING_WRONG" as const, ruleType: "DISCOUNT_PERCENT" as const, value: 50 },
+    { tier: "PLATINUM" as const, category: "MAINTENANCE" as const, ruleType: "INCLUDED_HOURS" as const, value: 1 },
+  ];
+
+  for (const rule of coverageRules) {
+    await prisma.coverageRule.upsert({
+      where: { tier_category: { tier: rule.tier, category: rule.category } },
+      update: {},
+      create: {
+        tier: rule.tier,
+        category: rule.category,
+        ruleType: rule.ruleType,
+        value: rule.value,
+        fallbackRuleType: rule.fallbackRuleType || null,
+        fallbackValue: rule.fallbackValue ?? null,
+      },
+    });
+  }
+
   // ─── Communication Templates ──────────────────────────────
   await prisma.communicationTemplate.createMany({
     data: [

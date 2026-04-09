@@ -110,29 +110,49 @@ export default function RequestDetailPage() {
   async function handleUpdate() {
     setUpdating(true);
     setError("");
-    const { data, error: err } = await fetchApi<ServiceRequest>(`/api/service-requests/${params.id}`, {
+    const { error: err } = await fetchApi(`/api/service-requests/${params.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        status: scheduleForm.status,
         assignedTechnicianId: scheduleForm.assignedTechnicianId || null,
         scheduledDate: scheduleForm.scheduledDate || null,
         scheduledWindow: scheduleForm.scheduledWindow || null,
       }),
     });
-    if (err) { setError(err); } else if (data) { setSr(data); }
+    if (err) { setError(err); } else { await loadRequest(); }
     setUpdating(false);
+  }
+
+  async function changeStatus(newStatus: string) {
+    setUpdating(true);
+    setError("");
+    const { error: err } = await fetchApi(`/api/service-requests/${params.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    if (err) { setError(err); } else { await loadRequest(); }
+    setUpdating(false);
+  }
+
+  function StatusButton({ label, status, color, text }: { label: string; status: string; color: string; text?: boolean }) {
+    return (
+      <button onClick={() => changeStatus(status)} disabled={updating}
+        className={`rounded px-4 py-2 text-sm font-medium disabled:opacity-50 ${text ? color : `${color} text-white`}`}>
+        {label}
+      </button>
+    );
   }
 
   async function handleCancelApprove() {
     setUpdating(true);
     setError("");
-    const { data, error: err } = await fetchApi<ServiceRequest>(`/api/service-requests/${params.id}`, {
+    const { error: err } = await fetchApi(`/api/service-requests/${params.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "CANCELED" }),
     });
-    if (err) { setError(err); } else if (data) { setSr(data); }
+    if (err) { setError(err); } else { await loadRequest(); }
     setUpdating(false);
   }
 
@@ -140,12 +160,12 @@ export default function RequestDetailPage() {
     setUpdating(true);
     setError("");
     const revertTo = sr?.previousStatus || "SCHEDULED";
-    const { data, error: err } = await fetchApi<ServiceRequest>(`/api/service-requests/${params.id}`, {
+    const { error: err } = await fetchApi(`/api/service-requests/${params.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: revertTo }),
     });
-    if (err) { setError(err); } else if (data) { setSr(data); }
+    if (err) { setError(err); } else { await loadRequest(); }
     setUpdating(false);
   }
 
@@ -219,17 +239,35 @@ export default function RequestDetailPage() {
       )}
 
       {sr.status === "RESCHEDULE_REQUESTED" && sr.job && (
-        <div className="bg-amber-50 border border-amber-200 rounded p-3 mb-4 text-sm">
+        <div className="bg-amber-50 border border-amber-200 rounded p-4 mb-4 text-sm">
           <span className="font-medium text-amber-800">Reschedule Requested</span>
           {sr.job.rescheduleReason && <p className="text-amber-700 mt-1">Reason: {sr.job.rescheduleReason}</p>}
           {sr.job.rescheduleSuggestedTimes && (sr.job.rescheduleSuggestedTimes as { date: string; startTime: string; endTime: string }[]).length > 0 && (
-            <div className="mt-1 text-amber-700">
-              Suggested times:{" "}
-              {(sr.job.rescheduleSuggestedTimes as { date: string; startTime: string; endTime: string }[]).map((t, i) => (
-                <span key={i}>{i > 0 ? ", " : ""}{new Date(t.date + "T00:00").toLocaleDateString()} {t.startTime}–{t.endTime}</span>
-              ))}
+            <div className="mt-2">
+              <p className="text-amber-700 font-medium mb-1">Suggested times — click to accept:</p>
+              <div className="flex flex-wrap gap-2">
+                {(sr.job.rescheduleSuggestedTimes as { date: string; startTime: string; endTime: string }[]).map((t, i) => (
+                  <button key={i} onClick={async () => {
+                    setUpdating(true); setError("");
+                    const { error: err } = await fetchApi(`/api/service-requests/${params.id}`, {
+                      method: "PATCH", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        status: "SCHEDULED",
+                        scheduledDate: t.date,
+                        scheduledWindow: `${t.startTime}–${t.endTime}`,
+                      }),
+                    });
+                    if (err) { setError(err); } else { await loadRequest(); }
+                    setUpdating(false);
+                  }} disabled={updating}
+                    className="rounded border border-amber-400 bg-white px-3 py-1.5 text-amber-800 font-medium hover:bg-amber-100 disabled:opacity-50">
+                    {new Date(t.date + "T00:00").toLocaleDateString()} {t.startTime}–{t.endTime}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
+          <p className="text-amber-600 text-xs mt-2">Or use the controls below to set a custom date and change status to Scheduled.</p>
         </div>
       )}
 
@@ -276,20 +314,53 @@ export default function RequestDetailPage() {
             </div>
           )}
 
-          {/* GM Controls */}
+          {/* Status Actions */}
           <div className="rounded border border-gray-200 p-4">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Manage Request</h2>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Actions</h2>
+            <div className="flex flex-wrap gap-2">
+              {sr.status === "SUBMITTED" && (
+                <StatusButton label="Begin Review" status="UNDER_REVIEW" color="bg-blue-600 hover:bg-blue-700" />
+              )}
+              {sr.status === "UNDER_REVIEW" && (
+                <>
+                  <StatusButton label="Schedule" status="SCHEDULED" color="bg-indigo-600 hover:bg-indigo-700" />
+                  <StatusButton label="Back to Submitted" status="SUBMITTED" color="border border-gray-300 !text-gray-700 !bg-white hover:!bg-gray-50" text />
+                </>
+              )}
+              {sr.status === "SCHEDULED" && (
+                <>
+                  <StatusButton label="Start Work" status="IN_PROGRESS" color="bg-orange-500 hover:bg-orange-600" />
+                  <StatusButton label="Back to Review" status="UNDER_REVIEW" color="border border-gray-300 !text-gray-700 !bg-white hover:!bg-gray-50" text />
+                </>
+              )}
+              {sr.status === "IN_PROGRESS" && (
+                <>
+                  <StatusButton label="Mark Complete" status="COMPLETE" color="bg-green-600 hover:bg-green-700" />
+                  <StatusButton label="Back to Scheduled" status="SCHEDULED" color="border border-gray-300 !text-gray-700 !bg-white hover:!bg-gray-50" text />
+                </>
+              )}
+              {sr.status === "COMPLETE" && (
+                <>
+                  <StatusButton label="Close & Sign Off" status="CLOSED" color="bg-gray-800 hover:bg-gray-900" />
+                  <StatusButton label="Reopen" status="IN_PROGRESS" color="border border-gray-300 !text-gray-700 !bg-white hover:!bg-gray-50" text />
+                </>
+              )}
+              {sr.status === "CLOSED" && (
+                <StatusButton label="Reopen (Back to Complete)" status="COMPLETE" color="border border-gray-300 !text-gray-700 !bg-white hover:!bg-gray-50" text />
+              )}
+              {sr.status === "RESCHEDULE_REQUESTED" && (
+                <StatusButton label="Schedule" status="SCHEDULED" color="bg-indigo-600 hover:bg-indigo-700" />
+              )}
+              {!["CANCELED", "CLOSED"].includes(sr.status) && (
+                <StatusButton label="Cancel" status="CANCELED" color="border border-red-300 !text-red-600 !bg-white hover:!bg-red-50" text />
+              )}
+            </div>
+          </div>
+
+          {/* Scheduling Details */}
+          <div className="rounded border border-gray-200 p-4">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Scheduling</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium mb-1">Status</label>
-                <select value={scheduleForm.status}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, status: e.target.value })}
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm">
-                  {STATUS_FLOW.map((s) => (
-                    <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
-                  ))}
-                </select>
-              </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Assign Technician</label>
                 <select value={scheduleForm.assignedTechnicianId}
@@ -312,40 +383,10 @@ export default function RequestDetailPage() {
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm" />
               </div>
             </div>
-            <div className="flex gap-2 mt-3">
-              <button onClick={handleUpdate} disabled={updating}
-                className="rounded bg-blue-600 px-4 py-2 text-sm text-white font-medium hover:bg-blue-700 disabled:opacity-50">
-                {updating ? "Updating..." : "Update"}
-              </button>
-              {sr.status === "COMPLETE" && (
-                <button onClick={async () => {
-                  setUpdating(true); setError("");
-                  const { data: d, error: err } = await fetchApi<ServiceRequest>(`/api/service-requests/${params.id}`, {
-                    method: "PATCH", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ status: "CLOSED" }),
-                  });
-                  if (err) { setError(err); } else if (d) { setSr(d); }
-                  setUpdating(false);
-                }} disabled={updating}
-                  className="rounded bg-gray-800 px-4 py-2 text-sm text-white font-medium hover:bg-gray-900 disabled:opacity-50">
-                  Close &amp; Sign Off
-                </button>
-              )}
-              {sr.status === "CLOSED" && (
-                <button onClick={async () => {
-                  setUpdating(true); setError("");
-                  const { data: d, error: err } = await fetchApi<ServiceRequest>(`/api/service-requests/${params.id}`, {
-                    method: "PATCH", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ status: "COMPLETE" }),
-                  });
-                  if (err) { setError(err); } else if (d) { setSr(d); }
-                  setUpdating(false);
-                }} disabled={updating}
-                  className="rounded border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50">
-                  Reopen (Back to Complete)
-                </button>
-              )}
-            </div>
+            <button onClick={handleUpdate} disabled={updating}
+              className="mt-3 rounded bg-blue-600 px-4 py-2 text-sm text-white font-medium hover:bg-blue-700 disabled:opacity-50">
+              {updating ? "Saving..." : "Save Scheduling"}
+            </button>
           </div>
 
           {/* Comments */}

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { apiHandler } from "@/lib/api-handler";
 import { getBenefitUsage } from "@/lib/benefit-usage";
@@ -12,6 +13,20 @@ export const GET = apiHandler(async (_request, { params }) => {
   }
 
   const { id } = await params;
+  const roles = session.user.roles as string[];
+  const isInternal = roles.some((r) => ["GM", "ADMIN", "TECHNICIAN", "BOOKKEEPER"].includes(r));
+
+  // Customers can only view their own account's benefits
+  if (!isInternal) {
+    const account = await prisma.account.findUnique({
+      where: { id },
+      include: { customer: { include: { user: { select: { id: true } } } } },
+    });
+    if (!account || account.customer.user?.id !== session.user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
   const usage = await getBenefitUsage(id);
 
   if (!usage) {

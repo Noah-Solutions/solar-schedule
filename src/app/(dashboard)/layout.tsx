@@ -52,6 +52,7 @@ export default async function DashboardLayout({
         {isInternal && (
           <>
             <MobileLink href="/customers" label="Customers" />
+            {canSeeBilling && <MobileLink href="/billing" label="Billing" />}
             <MobileLink href="/admin" label="Admin" />
           </>
         )}
