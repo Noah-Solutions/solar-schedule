@@ -1,0 +1,251 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth & Identity ────────────────────────────────────────
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  passwordHash String
+  customerId   String?    @unique @db.Uuid
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  customer     Customer?  @relation(fields: [customerId], references: [id])
+  roles        UserRole[]
+  comments     Comment[]
+  attachments  Attachment[]
+}
+
+enum Role {
+  CUSTOMER
+  GM
+  TECHNICIAN
+  BOOKKEEPER
+  ADMIN
+}
+
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  role      Role
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+}
+
+// ─── Core Business Objects ──────────────────────────────────
+
+model Customer {
+  id               String   @id @default(uuid()) @db.Uuid
+  primaryPhone     String   @unique
+  firstName        String
+  lastName         String
+  email            String   @unique
+  additionalPhones Json     @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user     User?
+  accounts Account[]
+}
+
+enum AccountType {
+  RESIDENTIAL
+  COMMERCIAL
+}
+
+enum InstalledBy {
+  EGT
+  OTHER
+}
+
+model Account {
+  id           String      @id @default(uuid()) @db.Uuid
+  customerId   String      @db.Uuid
+  type         AccountType
+  name         String?
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  zip          String
+  installedBy  InstalledBy
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  customer        Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  membership      Membership?
+  serviceRequests ServiceRequest[]
+}
+
+// ─── Membership ─────────────────────────────────────────────
+
+enum MembershipTier {
+  BASIC
+  ELITE
+  PLATINUM
+}
+
+enum MembershipStatus {
+  ACTIVE
+  CANCELED
+  EXPIRED
+}
+
+model Membership {
+  id          String           @id @default(uuid()) @db.Uuid
+  accountId   String           @unique @db.Uuid
+  tier        MembershipTier
+  status      MembershipStatus
+  startDate   DateTime         @db.Date
+  renewalDate DateTime?        @db.Date
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+// ─── Service Requests & Jobs ────────────────────────────────
+
+enum ServiceCategory {
+  SOMETHING_WRONG
+  MAINTENANCE
+  CLEANING
+  INSPECTION
+  BATTERY
+  WARRANTY
+  OTHER
+}
+
+enum Urgency {
+  NORMAL
+  URGENT
+}
+
+enum ServiceRequestStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETE
+  CLOSED
+  RESCHEDULE_REQUESTED
+  CANCEL_REQUESTED
+  CANCELED
+}
+
+enum BillingStatus {
+  PENDING
+  BILLED
+  NOT_APPLICABLE
+}
+
+model ServiceRequest {
+  id               String                @id @default(uuid()) @db.Uuid
+  accountId        String?               @db.Uuid
+  category         ServiceCategory
+  urgency          Urgency
+  description      String
+  preferredWindows Json                   @default("[]")
+  status           ServiceRequestStatus  @default(SUBMITTED)
+  previousStatus   ServiceRequestStatus?
+  // Unlinked request fields (for requests without an account)
+  contactName      String?
+  contactPhone     String?
+  contactEmail     String?
+  serviceAddress   Json?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  account     Account?     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  job         Job?
+  attachments Attachment[]
+}
+
+model Job {
+  id                       String         @id @default(uuid()) @db.Uuid
+  serviceRequestId         String         @unique @db.Uuid
+  assignedTechnicianId     String?        @db.Uuid
+  scheduledDate            DateTime?      @db.Date
+  scheduledWindow          String?
+  technicianNotes          String?
+  followUpNeeded           Boolean        @default(false)
+  followUpNote             String?
+  rescheduleReason         String?
+  rescheduleSuggestedTimes Json?
+  billingStatus            BillingStatus  @default(PENDING)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  serviceRequest ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  comments       Comment[]
+}
+
+model Comment {
+  id        String   @id @default(uuid()) @db.Uuid
+  jobId     String   @db.Uuid
+  authorId  String   @db.Uuid
+  body      String
+  createdAt DateTime @default(now())
+
+  job    Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+}
+
+model Attachment {
+  id               String   @id @default(uuid()) @db.Uuid
+  serviceRequestId String   @db.Uuid
+  fileName         String
+  s3Key            String
+  contentType      String
+  sizeBytes        Int
+  uploadedBy       String   @db.Uuid
+  createdAt        DateTime @default(now())
+
+  serviceRequest ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  uploader       User           @relation(fields: [uploadedBy], references: [id])
+}
+
+// ─── Admin-Managed Configuration ────────────────────────────
+
+model ServicePlan {
+  id             String   @id @default(uuid()) @db.Uuid
+  tier           MembershipTier @unique
+  name           String
+  description    String
+  benefits       Json
+  discounts      Json
+  responseWindow String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ServiceCatalogItem {
+  id          String          @id @default(uuid()) @db.Uuid
+  name        String
+  description String
+  category    ServiceCategory
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model CommunicationTemplate {
+  id           String   @id @default(uuid()) @db.Uuid
+  triggerEvent String
+  name         String
+  subject      String
+  body         String
+  isActive     Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+}
