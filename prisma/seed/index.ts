@@ -3,7 +3,9 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import "dotenv/config";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const connectionString = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+if (!connectionString) throw new Error("No database connection string. Set POSTGRES_URL or DATABASE_URL.");
+const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
@@ -91,6 +93,19 @@ async function main() {
       email: "tech@egt.com",
       passwordHash: techPasswordHash,
       name: "Mike (Tech)",
+      roles: { create: [{ role: "TECHNICIAN" }] },
+    },
+  });
+
+  // Second technician for scheduling tests
+  const tech2PasswordHash = await bcrypt.hash("tech123", 12);
+  const tech2User = await prisma.user.upsert({
+    where: { email: "tech2@egt.com" },
+    update: {},
+    create: {
+      email: "tech2@egt.com",
+      passwordHash: tech2PasswordHash,
+      name: "Alex (Tech 2)",
       roles: { create: [{ role: "TECHNICIAN" }] },
     },
   });
@@ -464,6 +479,126 @@ async function main() {
     },
   });
 
+  // ─── Edge Case: Cancel-requested job ────────────────────────
+  const sr9 = await prisma.serviceRequest.create({
+    data: {
+      accountId: lindaHome.id,
+      category: "CLEANING",
+      urgency: "NORMAL",
+      description: "Panel cleaning requested. However, tenant is moving out next week so we may not need this anymore.",
+      status: "CANCEL_REQUESTED",
+      previousStatus: "SCHEDULED",
+      createdAt: new Date("2026-04-06T14:00:00"),
+    },
+  });
+
+  await prisma.job.create({
+    data: {
+      serviceRequestId: sr9.id,
+      assignedTechnicianId: tech2User.id,
+      scheduledDate: new Date("2026-04-12"),
+      scheduledWindow: "1pm-3pm",
+    },
+  });
+
+  // ─── Edge Case: Job with follow-up flagged ─────────────────
+  const sr10 = await prisma.serviceRequest.create({
+    data: {
+      accountId: marcusBusiness.id,
+      category: "MAINTENANCE",
+      urgency: "NORMAL",
+      description: "Annual maintenance on the commercial system at the auto body shop.",
+      status: "COMPLETE",
+      createdAt: new Date("2026-03-20T09:00:00"),
+    },
+  });
+
+  await prisma.job.create({
+    data: {
+      serviceRequestId: sr10.id,
+      assignedTechnicianId: techUser.id,
+      scheduledDate: new Date("2026-03-25"),
+      scheduledWindow: "7am-9am",
+      technicianNotes: "Completed routine maintenance. Found two panels with micro-cracks that should be replaced within 6 months.",
+      followUpNeeded: true,
+      followUpNote: "Panels 7 and 12 have micro-cracks. Customer should schedule panel replacement before monsoon season.",
+    },
+  });
+
+  // ─── Edge Case: Customer with expired membership ───────────
+  const expiredCust = await prisma.customer.upsert({
+    where: { primaryPhone: "+14805554444" },
+    update: {},
+    create: {
+      primaryPhone: "+14805554444",
+      firstName: "Robert",
+      lastName: "Nguyen",
+      email: "robert.n@example.com",
+      user: {
+        create: {
+          email: "robert.n@example.com",
+          passwordHash: custPassword,
+          name: "Robert Nguyen",
+          roles: { create: [{ role: "CUSTOMER" }] },
+        },
+      },
+    },
+  });
+
+  const expiredAccount = await prisma.account.create({
+    data: {
+      customerId: expiredCust.id,
+      type: "RESIDENTIAL",
+      name: "Home",
+      addressLine1: "555 Sunflower Ave",
+      city: "Chandler",
+      state: "AZ",
+      zip: "85225",
+      installedBy: "EGT",
+      membership: {
+        create: {
+          tier: "BASIC",
+          status: "EXPIRED",
+          startDate: new Date("2024-06-01"),
+          renewalDate: new Date("2025-06-01"),
+        },
+      },
+    },
+  });
+
+  // Expired customer submitting a new request — should be treated as non-member
+  await prisma.serviceRequest.create({
+    data: {
+      accountId: expiredAccount.id,
+      category: "SOMETHING_WRONG",
+      urgency: "NORMAL",
+      description: "Inverter is making a buzzing sound that started last week. Output seems normal but the noise is concerning.",
+      status: "SUBMITTED",
+      createdAt: new Date("2026-04-08T15:00:00"),
+    },
+  });
+
+  // ─── Edge Case: Tech 2 has jobs on same day as Tech 1 (schedule conflict test)
+  const sr11 = await prisma.serviceRequest.create({
+    data: {
+      accountId: janeAccount.id,
+      category: "CLEANING",
+      urgency: "NORMAL",
+      description: "Annual panel cleaning for Elite membership.",
+      status: "SCHEDULED",
+      createdAt: new Date("2026-04-05T10:00:00"),
+    },
+  });
+
+  await prisma.job.create({
+    data: {
+      serviceRequestId: sr11.id,
+      assignedTechnicianId: tech2User.id,
+      scheduledDate: new Date("2026-04-14"),
+      scheduledWindow: "9am-11am",
+    },
+  });
+
   // ─── Coverage Rules ────────────────────────────────────────
   const coverageRules = [
     // Basic
@@ -512,6 +647,32 @@ async function main() {
       },
     });
   }
+
+  // Tech B (Alex): Mon-Thu 8am-6pm, off Fri-Sun
+  for (let day = 0; day < 7; day++) {
+    await prisma.techSchedule.upsert({
+      where: { userId_dayOfWeek: { userId: tech2User.id, dayOfWeek: day } },
+      update: {},
+      create: {
+        userId: tech2User.id,
+        dayOfWeek: day,
+        startTime: "08:00",
+        endTime: "18:00",
+        isAvailable: day < 4, // Mon-Thu
+      },
+    });
+  }
+
+  // Time off: Alex has a half-day on April 14
+  await prisma.timeOff.create({
+    data: {
+      userId: tech2User.id,
+      date: new Date("2026-04-14"),
+      startTime: "12:00",
+      endTime: "18:00",
+      reason: "Doctor appointment",
+    },
+  });
 
   // ─── Communication Templates ──────────────────────────────
   await prisma.communicationTemplate.createMany({
@@ -566,22 +727,31 @@ async function main() {
   console.log("");
   console.log("Seed complete!");
   console.log("");
-  console.log("Dev logins (all passwords below):");
-  console.log("  GM/Admin:    gm@egt.com / admin123");
-  console.log("  Technician:  tech@egt.com / tech123");
-  console.log("  Bookkeeper:  bookkeeper@egt.com / book123");
+  console.log("Dev logins:");
+  console.log("  GM/Admin:     gm@egt.com / admin123");
+  console.log("  Tech 1:       tech@egt.com / tech123  (Mike, Mon-Fri 7-5)");
+  console.log("  Tech 2:       tech2@egt.com / tech123  (Alex, Mon-Thu 8-6, half-day 4/14)");
+  console.log("  Bookkeeper:   bookkeeper@egt.com / book123");
   console.log("");
-  console.log("  Customer 1 (Elite, EGT-installed):      jane@example.com / customer123");
-  console.log("  Customer 2 (Platinum+Basic, 2 accounts): marcus.rivera@example.com / customer123");
-  console.log("  Customer 3 (No membership, outside):     linda.chen@example.com / customer123");
+  console.log("  Jane Smith (Elite):               jane@example.com / customer123");
+  console.log("  Marcus Rivera (Platinum+Basic):    marcus.rivera@example.com / customer123");
+  console.log("  Linda Chen (no membership, outside): linda.chen@example.com / customer123");
+  console.log("  Robert Nguyen (EXPIRED Basic):     robert.n@example.com / customer123");
   console.log("");
-  console.log("Service requests:");
-  console.log("  Jane:     1 CLOSED maintenance (billed), 1 urgent IN_PROGRESS (inverter fault)");
-  console.log("  Marcus:   1 scheduled cleaning, 1 under-review battery, 1 CLOSED inspection (N/A - covered), 1 reschedule-requested");
-  console.log("  Linda:    1 submitted urgent (outside install), 1 submitted warranty question");
-  console.log("  Unlinked: 1 submitted inspection (new prospect, no account)");
+  console.log("Service requests (12 total across all statuses):");
+  console.log("  Jane:     CLOSED maint (billed), IN_PROGRESS urgent repair, SCHEDULED cleaning (tech2)");
+  console.log("  Marcus:   SCHEDULED cleaning, UNDER_REVIEW battery, CLOSED inspection, RESCHEDULE_REQUESTED maint, COMPLETE maint w/follow-up");
+  console.log("  Linda:    SUBMITTED urgent (outside), SUBMITTED warranty, CANCEL_REQUESTED cleaning");
+  console.log("  Robert:   SUBMITTED repair (expired membership — tests non-member coverage)");
+  console.log("  Unlinked: SUBMITTED inspection (new prospect)");
   console.log("");
-  console.log("Billing queue: Jane's closed maintenance shows as BILLED, Marcus's inspection as NOT_APPLICABLE");
+  console.log("Edge cases seeded:");
+  console.log("  - Expired membership customer (Robert)");
+  console.log("  - Cancel-requested job awaiting GM approval (Linda)");
+  console.log("  - Follow-up flagged job (Marcus auto body)");
+  console.log("  - Two techs with overlapping jobs on 4/14 (schedule conflict test)");
+  console.log("  - Tech 2 has half-day time-off on 4/14 (time-off display test)");
+  console.log("  - Unlinked request with no account (linking test)");
 }
 
 main()
